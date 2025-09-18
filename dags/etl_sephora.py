@@ -21,7 +21,7 @@ import re
 
 
 
-######## FUNCTIONS FOR THE JOB ###########
+######## FUNCTIONS FOR THE JOB (not yet to be revamped)###########
 
 def get_skincare_data(ti):
     url = 'https://www.sephora.co.id/search?q=moisturizer'
