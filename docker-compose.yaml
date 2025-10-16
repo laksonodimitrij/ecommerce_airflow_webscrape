@@ -127,6 +127,18 @@ services:
       start_period: 30s
     restart: always
 
+  # minio:
+  # image: minio/latest
+  # environment:
+  #   - MINIO_ROOT_USER=root
+  #   - MINIO_ROOT_PASSWORD=abcd 
+  #   - MINIO_DEFAULT_BUCKETS=storage1
+  # volumes:
+  #   - minio_data:/data
+  # ports:
+  #   - "9000:9000"
+  #   - "9001:9001"
+
   airflow-webserver:
     <<: *airflow-common
     command: webserver

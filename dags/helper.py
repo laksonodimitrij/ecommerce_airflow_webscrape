@@ -1,14 +1,14 @@
-from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 import pandas as pd
 import requests
 import re
 import time
-import datetime
-
+import datetime as dt
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 class Helper():
     
+    @staticmethod
     def sephora_extract_product_data(card):
         """
         Extract product data from sephora card
@@ -48,7 +48,7 @@ class Helper():
                     rating_percentage = None  # In case conversion fails
         
         return {
-        'upload_time': datetime.now(),
+        'upload_time': dt.datetime.now(),
         'brand': product_brand,
         'product_name': product_name,
         'price': sell_price,
@@ -56,7 +56,7 @@ class Helper():
         'rating_percentage': rating_percentage
         }
 
-
+    @staticmethod
     def sephora_get_data(ti, page_no, product_keyword):
         """
         Fetch skincare product data from Sephora Indonesia across multiple pages.
@@ -96,8 +96,54 @@ class Helper():
             #Politeness Delay
             time.sleep(1)
 
-        # Convert to DataFrame and push to XCom
         df = pd.DataFrame(all_product_data)
+
+        # Explicitly convert any datetime type columns to ISO Strings
+        for col in df.select_dtypes(include=['datetime64', 'datetimetz']).columns:
+            df[col] = df[col].dt.strftime('%Y-%m-&dT%H:%M:%S')
+        
+        # Also convert any remaining Timestamp or datetime objects in objects columns
+        df = df.astype(object).where(pd.notnull(df), None)
+        df = df.applymap(lambda x: x.isoformat() if isinstance(x, (pd.Timestamp, dt.datetime)) else x)
+
         ti.xcom_push(key='skincare_data', value=df.to_dict('records'))
+
+    @staticmethod
+    def insert_skincare_data_to_postgres(ti):
+        skincare_data = ti.xcom_pull(key="skincare_data", task_ids="fetch_skincare_data")
+        
+        if not skincare_data:
+            raise ValueError("No skincare data found to insert")
+
+        postgres_hook = PostgresHook(postgres_conn_id='skincare_connection')  # Make sure this matches your conn ID
+
+        insert_query = """
+            INSERT INTO skincare (brand, product_name, price, reviews_count, rating_percentage)
+            VALUES (%s, %s, %s, %s, %s)
+        """
+
+        for item in skincare_data:
+            # Clean each field
+            brand = item['brand']
+            product_name = item['product_name']
+
+            # Price: ensure int or None
+            price = item['price']
+            price = int(price) if pd.notna(price) and price is not None else None
+
+            # Reviews count: float → int or None
+            reviews_count = item['reviews_count']
+            reviews_count = int(reviews_count) if pd.notna(reviews_count) and reviews_count is not None else None
+
+            # Rating percentage: handle NaN
+            rating_percentage = item['rating_percentage']
+            rating_percentage = int(rating_percentage) if pd.notna(rating_percentage) and rating_percentage is not None else None
+
+            # Execute with cleaned values
+            postgres_hook.run(
+                insert_query,
+                parameters=(brand, product_name, price, reviews_count, rating_percentage)
+            )
+
 
     
